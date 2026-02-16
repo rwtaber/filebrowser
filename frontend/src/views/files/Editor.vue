@@ -95,6 +95,8 @@ import { useLayoutStore } from "@/stores/layout";
 import { getEditorTheme } from "@/utils/theme";
 import { marked } from "marked";
 import markedKatex from "marked-katex-extension";
+import { createURL } from "@/api/utils";
+import { removeLastDir } from "@/utils/url";
 import { inject, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { onBeforeRouteUpdate, useRoute, useRouter } from "vue-router";
@@ -124,6 +126,24 @@ const katexOptions = {
   throwOnError: false
 };
 marked.use(markedKatex(katexOptions));
+
+// Rewrite relative URLs in markdown preview to point at the raw file API
+const filePath = fileStore.req?.path || "";
+const dirPath = removeLastDir(filePath);
+const rawBaseUrl = createURL("api/raw" + dirPath + "/");
+
+function isRelativeUrl(href: string): boolean {
+  return !!href && !href.startsWith("/") && !href.startsWith("#") && !/^[a-z][a-z0-9+.-]*:/i.test(href);
+}
+
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  for (const attr of ["src", "href"]) {
+    const val = node.getAttribute(attr);
+    if (val && isRelativeUrl(val)) {
+      node.setAttribute(attr, rawBaseUrl + val);
+    }
+  }
+});
 
 const isSelectionEmpty = ref(true);
 
