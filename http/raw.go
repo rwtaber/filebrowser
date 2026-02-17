@@ -216,7 +216,13 @@ func rawFileHandler(w http.ResponseWriter, r *http.Request, file *files.FileInfo
 	defer fd.Close()
 
 	setContentDisposition(w, r, file)
-	w.Header().Add("Content-Security-Policy", `script-src 'none';`)
+	lowerName := strings.ToLower(file.Name)
+	if strings.HasSuffix(lowerName, ".html") || strings.HasSuffix(lowerName, ".htm") {
+		// Allow HTML files to load external scripts and styles (e.g. KaTeX, highlight.js CDNs)
+		w.Header().Del("Content-Security-Policy")
+	} else {
+		w.Header().Add("Content-Security-Policy", `script-src 'none';`)
+	}
 	w.Header().Set("Cache-Control", "private")
 	http.ServeContent(w, r, file.Name, file.ModTime, fd)
 	return 0, nil
