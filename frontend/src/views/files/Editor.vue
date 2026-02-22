@@ -137,7 +137,11 @@ const katexOptions = {
 marked.use(markedKatex(katexOptions));
 
 // Pre-render ```mermaid code blocks to SVG, injected after DOMPurify
-mermaid.initialize({ startOnLoad: false, theme: "default" });
+mermaid.initialize({
+  startOnLoad: false,
+  theme: "default",
+  themeVariables: { background: "transparent" },
+});
 let mermaidId = 0;
 let mermaidSvgs: string[] = [];
 marked.use({
