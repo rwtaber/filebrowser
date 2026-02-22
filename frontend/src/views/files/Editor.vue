@@ -93,11 +93,20 @@ import { useAuthStore } from "@/stores/auth";
 import { useFileStore } from "@/stores/file";
 import { useLayoutStore } from "@/stores/layout";
 import { getEditorTheme } from "@/utils/theme";
-import { marked } from "marked";
+import { marked, type Token, type Tokens } from "marked";
 import markedKatex from "marked-katex-extension";
+// @ts-ignore -- use full ESM build to avoid runtime dynamic imports
+import mermaid from "mermaid/dist/mermaid.esm.mjs";
 import { createURL } from "@/api/utils";
 import { removeLastDir } from "@/utils/url";
-import { inject, onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
+import {
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watchEffect,
+} from "vue";
 import { useI18n } from "vue-i18n";
 import { onBeforeRouteUpdate, useRoute, useRouter } from "vue-router";
 import { read, copy } from "@/utils/clipboard";
@@ -126,6 +135,38 @@ const katexOptions = {
   throwOnError: false
 };
 marked.use(markedKatex(katexOptions));
+
+// Pre-render ```mermaid code blocks to SVG, injected after DOMPurify
+mermaid.initialize({ startOnLoad: false, theme: "default" });
+let mermaidId = 0;
+let mermaidSvgs: string[] = [];
+marked.use({
+  async: true,
+  walkTokens: async (token: Token) => {
+    if (token.type === "code" && token.lang === "mermaid") {
+      const t = token as Token & { mermaidIndex?: number };
+      try {
+        const { svg } = await mermaid.render(
+          `mermaid-${mermaidId++}`,
+          token.text
+        );
+        t.mermaidIndex = mermaidSvgs.length;
+        mermaidSvgs.push(svg);
+      } catch {
+        // leave as code block on error
+      }
+    }
+  },
+  renderer: {
+    code(token: Tokens.Code) {
+      const t = token as Tokens.Code & { mermaidIndex?: number };
+      if (t.lang === "mermaid" && t.mermaidIndex !== undefined) {
+        return `<div class="mermaid" data-mermaid-index="${t.mermaidIndex}"></div>`;
+      }
+      return false; // default renderer
+    },
+  },
+});
 
 // Rewrite relative URLs in markdown preview to point at the raw file API
 const filePath = fileStore.req?.path || "";
@@ -184,7 +225,21 @@ onMounted(() => {
     if (isMarkdownFile && isPreview.value) {
       const new_value = editor.value?.getValue() || "";
       try {
-        previewContent.value = DOMPurify.sanitize(await marked(new_value));
+        mermaidSvgs = [];
+        const html = await marked(new_value);
+        previewContent.value = DOMPurify.sanitize(html);
+        // Inject mermaid SVGs after sanitization (they contain <style>
+        // and <foreignObject> that DOMPurify would strip)
+        await nextTick();
+        const container = document.getElementById("preview-container");
+        container
+          ?.querySelectorAll<HTMLElement>(".mermaid[data-mermaid-index]")
+          .forEach((el) => {
+            const idx = Number(el.dataset.mermaidIndex);
+            if (mermaidSvgs[idx]) {
+              el.innerHTML = mermaidSvgs[idx];
+            }
+          });
       } catch (error) {
         console.error("Failed to convert content to HTML:", error);
         previewContent.value = "";

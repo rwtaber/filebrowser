@@ -9,3 +9,11 @@
   overflow: auto;
   flex: 1;
 }
+
+#preview-container .mermaid {
+  text-align: center;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+}
